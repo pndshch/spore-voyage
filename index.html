@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>胞子航海 — Spore Voyage</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #000; font-family: 'Helvetica Neue', sans-serif;
+  touch-action: none; user-select: none;
+}
+canvas { display: block; width: 100%; height: 100%; }
+
+#ui-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+
+#hud {
+  position: absolute; top: 0; left: 0; width: 100%;
+  padding: 16px 20px; display: flex; justify-content: space-between;
+  align-items: flex-start; color: #aaffaa; font-size: 14px;
+  text-shadow: 0 0 8px rgba(100,255,100,0.5);
+}
+
+#energy-bar-container {
+  width: 120px; height: 8px; background: rgba(255,255,255,0.1);
+  border-radius: 4px; overflow: hidden; margin-top: 4px;
+}
+#energy-bar {
+  height: 100%; width: 100%; background: linear-gradient(90deg, #44ff88, #88ffcc);
+  border-radius: 4px; transition: width 0.1s;
+}
+
+#state-indicator {
+  position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+  color: rgba(255,255,255,0.6); font-size: 13px; letter-spacing: 2px;
+  transition: all 0.3s;
+}
+
+#start-screen, #end-screen {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.85); color: #ddf; text-align: center;
+  padding: 30px; pointer-events: auto;
+}
+
+#start-screen h1 {
+  font-size: 36px; font-weight: 300; margin-bottom: 8px;
+  color: #aaffcc; text-shadow: 0 0 20px rgba(100,255,150,0.4);
+}
+#start-screen .subtitle {
+  font-size: 14px; color: #88aa99; margin-bottom: 30px; line-height: 1.6;
+}
+#start-screen .how-to {
+  font-size: 13px; color: #779988; margin-bottom: 30px; line-height: 1.8;
+  max-width: 320px;
+}
+#start-screen .how-to strong { color: #aaffcc; }
+#start-screen .source-note {
+  font-size: 11px; color: #556666; margin-top: 20px; line-height: 1.5;
+  max-width: 300px;
+}
+
+.btn {
+  padding: 14px 40px; font-size: 16px; border: 1px solid rgba(100,255,150,0.4);
+  background: rgba(100,255,150,0.08); color: #aaffcc; border-radius: 30px;
+  cursor: pointer; transition: all 0.3s; pointer-events: auto;
+}
+.btn:hover, .btn:active {
+  background: rgba(100,255,150,0.2); border-color: rgba(100,255,150,0.7);
+  box-shadow: 0 0 20px rgba(100,255,150,0.2);
+}
+
+#end-screen { display: none; }
+#end-screen h2 { font-size: 24px; font-weight: 300; color: #aaffcc; margin-bottom: 16px; }
+#end-screen .distance { font-size: 48px; font-weight: 200; color: #fff; margin-bottom: 8px; }
+#end-screen .distance-label { font-size: 12px; color: #88aa99; margin-bottom: 24px; }
+#end-screen .insight {
+  font-size: 15px; color: #ccddcc; line-height: 1.8; max-width: 320px;
+  margin-bottom: 30px; font-style: italic;
+}
+#end-screen .stats {
+  font-size: 12px; color: #667766; margin-bottom: 24px; line-height: 1.8;
+}
+
+#dormancy-hint {
+  position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+  color: rgba(150,200,150,0.5); font-size: 11px; letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="ui-overlay">
+  <div id="hud" style="display:none;">
+    <div>
+      <div id="distance-display">0 km</div>
+      <div id="energy-bar-container"><div id="energy-bar"></div></div>
+    </div>
+    <div id="dormancy-count" style="font-size:12px; color:#88aa99;"></div>
+  </div>
+  <div id="state-indicator" style="display:none;">ACTIVE</div>
+  <div id="dormancy-hint" style="display:none;">tap / hold = dormancy</div>
+</div>
+
+<div id="start-screen">
+  <h1>胞子航海</h1>
+  <div class="subtitle">Spore Voyage</div>
+  <div class="how-to">
+    あなたは宇宙を漂う苔の胞子。<br><br>
+    <strong>タップ / 長押し</strong> → 休眠（ダメージ無効）<br>
+    <strong>離す</strong> → 活動（光を吸収してエネルギー回復）<br><br>
+    休眠中はエネルギーを消費する。<br>
+    エネルギーが尽きたら、旅は終わり。
+  </div>
+  <button class="btn" id="start-btn">旅に出る</button>
+  <div class="source-note">
+    ※ 2026年5月、北海道大学の研究チームが<br>
+    苔の胞子が宇宙空間で9ヶ月間生存したことを確認。<br>
+    この発見に着想を得たゲームです。
+  </div>
+</div>
+
+<div id="end-screen">
+  <h2>旅の終わり</h2>
+  <div class="distance" id="final-distance">0</div>
+  <div class="distance-label">km traveled</div>
+  <div class="insight" id="insight-text"></div>
+  <div class="stats" id="final-stats"></div>
+  <button class="btn" id="retry-btn">もう一度</button>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  ctx.scale(1, 1);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let gameRunning = false;
+let isDormant = false;
+let energy = 100;
+let distance = 0;
+let speed = 1;
+let damage = 0;
+let dormancyTime = 0;
+let activeTime = 0;
+let totalTime = 0;
+let dormancyCount = 0;
+let hazards = [];
+let particles = [];
+let stars = [];
+let lightMotes = [];
+let shieldPulse = 0;
+let hitFlash = 0;
+let sporeGlow = 0;
+let difficultyTimer = 0;
+
+// Spore position
+let sporeX, sporeY;
+const SPORE_RADIUS = 12;
+
+// Constants
+const ENERGY_DRAIN_DORMANT = 8; // per second
+const ENERGY_GAIN_ACTIVE = 3; // per second (from ambient light)
+const ENERGY_GAIN_MOTE = 8; // per light mote collected
+const HAZARD_DAMAGE = 25;
+const MAX_ENERGY = 100;
+
+// Stars background
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 1.5 + 0.3,
+      speed: Math.random() * 0.5 + 0.1,
+      brightness: Math.random()
+    });
+  }
+}
+
+function spawnHazard() {
+  const types = ['cosmic_ray', 'solar_flare', 'micrometeorite', 'radiation_wave'];
+  const type = types[Math.floor(Math.random() * types.length)];
+
+  let hazard;
+  switch(type) {
+    case 'cosmic_ray':
+      hazard = {
+        type, x: W + 50, y: Math.random() * H,
+        vx: -(3 + speed * 2) * (W/400), vy: (Math.random() - 0.5) * 2,
+        width: 80 + Math.random() * 60, height: 3,
+        color: '#ff4466', alpha: 0.8
+      };
+      break;
+    case 'solar_flare':
+      hazard = {
+        type, x: W + 50, y: Math.random() * H,
+        vx: -(2 + speed * 1.5) * (W/400), vy: 0,
+        radius: 20 + Math.random() * 30, expandRate: 0.5,
+        color: '#ffaa22', alpha: 0.6
+      };
+      break;
+    case 'micrometeorite':
+      hazard = {
+        type, x: W + 30, y: Math.random() * H,
+        vx: -(4 + speed * 2.5) * (W/400), vy: (Math.random() - 0.5) * 3,
+        radius: 4 + Math.random() * 6,
+        color: '#aaaacc', alpha: 0.9
+      };
+      break;
+    case 'radiation_wave':
+      hazard = {
+        type, x: W + 200, y: 0,
+        vx: -(1.5 + speed) * (W/400), vy: 0,
+        width: 8, height: H,
+        color: '#aa44ff', alpha: 0.3, pulse: 0
+      };
+      break;
+  }
+  hazards.push(hazard);
+}
+
+function spawnLightMote() {
+  lightMotes.push({
+    x: W + 20,
+    y: Math.random() * H,
+    vx: -(1 + speed * 0.8) * (W/400),
+    radius: 4 + Math.random() * 3,
+    pulse: Math.random() * Math.PI * 2,
+    collected: false
+  });
+}
+
+function drawStars(dt) {
+  stars.forEach(s => {
+    s.x -= s.speed * speed * (W/400) * dt * 60;
+    if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+    s.brightness += (Math.random() - 0.5) * 0.02;
+    s.brightness = Math.max(0.2, Math.min(1, s.brightness));
+    ctx.fillStyle = `rgba(200,220,255,${s.brightness * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawSpore() {
+  const cx = sporeX;
+  const cy = sporeY;
+
+  sporeGlow += 0.05;
+
+  if (isDormant) {
+    // Dormant: crystalline shell
+    shieldPulse += 0.08;
+    const shieldRadius = SPORE_RADIUS * 2.5 + Math.sin(shieldPulse) * 3;
+
+    // Outer shield glow
+    const grad = ctx.createRadialGradient(cx, cy, SPORE_RADIUS, cx, cy, shieldRadius + 10);
+    grad.addColorStop(0, 'rgba(100,200,255,0.15)');
+    grad.addColorStop(0.7, 'rgba(80,150,255,0.08)');
+    grad.addColorStop(1, 'rgba(60,100,200,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, shieldRadius + 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crystal shell
+    ctx.strokeStyle = `rgba(100,180,255,${0.4 + Math.sin(shieldPulse) * 0.2})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + shieldPulse * 0.3;
+      const r = shieldRadius;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Inner spore (dim)
+    ctx.fillStyle = 'rgba(60,120,80,0.8)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, SPORE_RADIUS * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Active: glowing green spore
+    const glowSize = SPORE_RADIUS * 3 + Math.sin(sporeGlow) * 4;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowSize);
+    grad.addColorStop(0, 'rgba(100,255,150,0.3)');
+    grad.addColorStop(0.5, 'rgba(80,200,100,0.1)');
+    grad.addColorStop(1, 'rgba(50,150,80,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, glowSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = '#66ff99';
+    ctx.shadowColor = '#44ff88';
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.arc(cx, cy, SPORE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Tiny organelle details
+    ctx.fillStyle = 'rgba(200,255,200,0.6)';
+    for (let i = 0; i < 3; i++) {
+      const angle = sporeGlow * 0.5 + (i / 3) * Math.PI * 2;
+      const r = SPORE_RADIUS * 0.5;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Hit flash
+  if (hitFlash > 0) {
+    ctx.fillStyle = `rgba(255,50,50,${hitFlash})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, SPORE_RADIUS * 3, 0, Math.PI * 2);
+    ctx.fill();
+    hitFlash -= 0.05;
+  }
+}
+
+function drawHazards(dt) {
+  hazards.forEach(h => {
+    h.x += h.vx * dt * 60;
+    h.y += (h.vy || 0) * dt * 60;
+
+    ctx.globalAlpha = h.alpha;
+    switch(h.type) {
+      case 'cosmic_ray':
+        ctx.strokeStyle = h.color;
+        ctx.lineWidth = h.height;
+        ctx.shadowColor = h.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(h.x, h.y);
+        ctx.lineTo(h.x + h.width, h.y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        break;
+      case 'solar_flare':
+        if (h.expandRate) h.radius += h.expandRate * dt * 60;
+        const fg = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, h.radius);
+        fg.addColorStop(0, h.color);
+        fg.addColorStop(0.6, `rgba(255,150,30,${h.alpha * 0.5})`);
+        fg.addColorStop(1, 'rgba(255,100,0,0)');
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case 'micrometeorite':
+        ctx.fillStyle = h.color;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+        ctx.fill();
+        // Trail
+        ctx.strokeStyle = `rgba(170,170,200,${h.alpha * 0.3})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(h.x, h.y);
+        ctx.lineTo(h.x + 20, h.y - h.vy * 3);
+        ctx.stroke();
+        break;
+      case 'radiation_wave':
+        h.pulse += 0.1;
+        const wa = h.alpha * (0.5 + Math.sin(h.pulse) * 0.3);
+        ctx.fillStyle = `rgba(170,68,255,${wa})`;
+        ctx.fillRect(h.x, h.y, h.width, h.height);
+        // Glow
+        ctx.fillStyle = `rgba(170,68,255,${wa * 0.3})`;
+        ctx.fillRect(h.x - 10, h.y, h.width + 20, h.height);
+        break;
+    }
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawLightMotes(dt) {
+  lightMotes.forEach(m => {
+    if (m.collected) return;
+    m.x += m.vx * dt * 60;
+    m.pulse += 0.08;
+
+    const glow = 0.4 + Math.sin(m.pulse) * 0.3;
+    const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.radius * 3);
+    grad.addColorStop(0, `rgba(255,255,200,${glow})`);
+    grad.addColorStop(0.5, `rgba(255,220,100,${glow * 0.4})`);
+    grad.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.radius * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(255,255,220,${glow + 0.3})`;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function checkCollisions() {
+  const sx = sporeX, sy = sporeY;
+
+  // Hazard collisions
+  hazards.forEach(h => {
+    let hit = false;
+    const hitRadius = isDormant ? SPORE_RADIUS * 0.5 : SPORE_RADIUS * 1.8;
+
+    switch(h.type) {
+      case 'cosmic_ray':
+        if (Math.abs(h.y - sy) < hitRadius + h.height &&
+            sx > h.x && sx < h.x + h.width) hit = true;
+        break;
+      case 'solar_flare':
+      case 'micrometeorite':
+        const dist = Math.hypot(h.x - sx, h.y - sy);
+        if (dist < hitRadius + (h.radius || 0)) hit = true;
+        break;
+      case 'radiation_wave':
+        if (sx > h.x - 15 && sx < h.x + h.width + 15 &&
+            sy > h.y && sy < h.y + h.height) hit = true;
+        break;
+    }
+
+    if (hit && !isDormant) {
+      energy -= HAZARD_DAMAGE;
+      hitFlash = 0.8;
+      damage++;
+      h.alpha = 0; // consume hazard
+      spawnHitParticles(sx, sy);
+    }
+  });
+
+  // Light mote collection (only when active)
+  if (!isDormant) {
+    lightMotes.forEach(m => {
+      if (m.collected) return;
+      const dist = Math.hypot(m.x - sx, m.y - sy);
+      if (dist < SPORE_RADIUS * 2.5 + m.radius) {
+        m.collected = true;
+        energy = Math.min(MAX_ENERGY, energy + ENERGY_GAIN_MOTE);
+        spawnCollectParticles(m.x, m.y);
+      }
+    });
+  }
+}
+
+function spawnHitParticles(x, y) {
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 3;
+    particles.push({
+      x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+      life: 1, decay: 0.03 + Math.random() * 0.02,
+      color: '255,80,80', size: 2 + Math.random() * 2
+    });
+  }
+}
+
+function spawnCollectParticles(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 2;
+    particles.push({
+      x, y, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+      life: 1, decay: 0.02 + Math.random() * 0.02,
+      color: '255,255,100', size: 2 + Math.random() * 2
+    });
+  }
+}
+
+function updateParticles(dt) {
+  particles.forEach(p => {
+    p.x += p.vx * dt * 60;
+    p.y += p.vy * dt * 60;
+    p.life -= p.decay * dt * 60;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  particles.forEach(p => {
+    ctx.fillStyle = `rgba(${p.color},${p.life})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// Nebula background effect
+let nebulaOffset = 0;
+function drawNebula(dt) {
+  nebulaOffset += speed * 0.2 * dt * 60;
+
+  // Subtle color wash
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  const hue1 = (nebulaOffset * 0.1) % 360;
+  grad.addColorStop(0, `hsla(${hue1}, 40%, 5%, 0.3)`);
+  grad.addColorStop(0.5, `hsla(${(hue1 + 60) % 360}, 30%, 3%, 0.2)`);
+  grad.addColorStop(1, `hsla(${(hue1 + 120) % 360}, 40%, 4%, 0.3)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function updateHUD() {
+  document.getElementById('distance-display').textContent = Math.floor(distance) + ' km';
+  document.getElementById('energy-bar').style.width = Math.max(0, energy) + '%';
+
+  const bar = document.getElementById('energy-bar');
+  if (energy < 25) bar.style.background = 'linear-gradient(90deg, #ff4444, #ff8844)';
+  else if (energy < 50) bar.style.background = 'linear-gradient(90deg, #ffaa44, #ffdd44)';
+  else bar.style.background = 'linear-gradient(90deg, #44ff88, #88ffcc)';
+
+  const stateEl = document.getElementById('state-indicator');
+  if (isDormant) {
+    stateEl.textContent = '◆ 休眠 DORMANT';
+    stateEl.style.color = 'rgba(100,180,255,0.7)';
+  } else {
+    stateEl.textContent = '○ 活動 ACTIVE';
+    stateEl.style.color = 'rgba(100,255,150,0.7)';
+  }
+}
+
+let lastTime = 0;
+let hazardTimer = 0;
+let moteTimer = 0;
+
+function gameLoop(time) {
+  if (!gameRunning) return;
+
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+
+  // Clear
+  ctx.fillStyle = '#020208';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update game state
+  totalTime += dt;
+  difficultyTimer += dt;
+
+  // Increase difficulty over time
+  if (difficultyTimer > 10) {
+    speed = Math.min(speed + 0.08, 5);
+    difficultyTimer = 0;
+  }
+
+  distance += speed * 0.5 * dt * 60;
+
+  // Energy management
+  if (isDormant) {
+    energy -= ENERGY_DRAIN_DORMANT * dt;
+    dormancyTime += dt;
+  } else {
+    energy += ENERGY_GAIN_ACTIVE * dt;
+    energy = Math.min(MAX_ENERGY, energy);
+    activeTime += dt;
+  }
+
+  // Game over check
+  if (energy <= 0) {
+    energy = 0;
+    endGame();
+    return;
+  }
+
+  // Spawn hazards
+  hazardTimer += dt;
+  const hazardInterval = Math.max(0.4, 2 - speed * 0.3);
+  if (hazardTimer > hazardInterval) {
+    spawnHazard();
+    hazardTimer = 0;
+  }
+
+  // Spawn light motes
+  moteTimer += dt;
+  if (moteTimer > 1.5) {
+    spawnLightMote();
+    moteTimer = 0;
+  }
+
+  // Clean up off-screen objects
+  hazards = hazards.filter(h => h.x > -200 && h.alpha > 0);
+  lightMotes = lightMotes.filter(m => m.x > -50 && !m.collected);
+
+  // Draw
+  drawNebula(dt);
+  drawStars(dt);
+  drawLightMotes(dt);
+  drawHazards(dt);
+  drawSpore();
+  updateParticles(dt);
+  checkCollisions();
+  updateHUD();
+
+  requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('state-indicator').style.display = 'block';
+  document.getElementById('dormancy-hint').style.display = 'block';
+
+  // Reset state
+  energy = 100;
+  distance = 0;
+  speed = 1;
+  damage = 0;
+  dormancyTime = 0;
+  activeTime = 0;
+  totalTime = 0;
+  dormancyCount = 0;
+  isDormant = false;
+  hazards = [];
+  particles = [];
+  lightMotes = [];
+  hazardTimer = 0;
+  moteTimer = 0;
+  difficultyTimer = 0;
+  hitFlash = 0;
+
+  sporeX = W * 0.25;
+  sporeY = H * 0.5;
+
+  initStars();
+  gameRunning = true;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameRunning = false;
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('state-indicator').style.display = 'none';
+  document.getElementById('dormancy-hint').style.display = 'none';
+
+  const endScreen = document.getElementById('end-screen');
+  endScreen.style.display = 'flex';
+
+  document.getElementById('final-distance').textContent = Math.floor(distance).toLocaleString();
+
+  // Calculate ratio
+  const dormancyRatio = totalTime > 0 ? dormancyTime / totalTime : 0;
+
+  // Choose insight based on play style
+  let insight;
+  if (dormancyRatio > 0.7) {
+    insight = "守りすぎた旅。\n殻の中は安全だが、光は届かない。\n恐れを手放す瞬間にこそ、生命は輝く。";
+  } else if (dormancyRatio < 0.2) {
+    insight = "勇敢な旅。しかし無防備すぎた。\n立ち止まることは弱さじゃない。\n嵐の中で目を閉じる勇気が、次の一歩を可能にする。";
+  } else if (distance > 5000) {
+    insight = "見事な航海。\n動くべき時と、止まるべき時を知っていた。\n生きることは、動き続けることじゃない。\n止まることを知っている者だけが、遠くへ行ける。";
+  } else {
+    insight = "宇宙は広く、旅は短い。\nでも胞子は知っている——\n今は眠りの時。やがて目覚める時が来ることを。\n焦らなくていい。";
+  }
+
+  document.getElementById('insight-text').textContent = insight;
+
+  document.getElementById('final-stats').innerHTML =
+    `活動時間: ${Math.floor(activeTime)}秒 / 休眠時間: ${Math.floor(dormancyTime)}秒<br>` +
+    `被ダメージ: ${damage}回 / 休眠率: ${Math.floor(dormancyRatio * 100)}%`;
+}
+
+// Input handling
+let touching = false;
+
+function setDormant(dormant) {
+  if (dormant && !isDormant) dormancyCount++;
+  isDormant = dormant;
+}
+
+// Touch
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); touching = true; setDormant(true); });
+canvas.addEventListener('touchend', (e) => { e.preventDefault(); touching = false; setDormant(false); });
+canvas.addEventListener('touchcancel', (e) => { touching = false; setDormant(false); });
+
+// Mouse
+canvas.addEventListener('mousedown', (e) => { touching = true; setDormant(true); });
+canvas.addEventListener('mouseup', (e) => { touching = false; setDormant(false); });
+canvas.addEventListener('mouseleave', (e) => { if (touching) { touching = false; setDormant(false); } });
+
+// Keyboard
+document.addEventListener('keydown', (e) => { if (e.code === 'Space' && gameRunning && !e.repeat) { setDormant(true); } });
+document.addEventListener('keyup', (e) => { if (e.code === 'Space') { setDormant(false); } });
+
+// Spore movement with touch/mouse position
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (gameRunning) {
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    sporeY = ((touch.clientY - rect.top) / rect.height) * H;
+    sporeX = Math.min(W * 0.6, Math.max(W * 0.1, ((touch.clientX - rect.left) / rect.width) * W));
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (gameRunning) {
+    const rect = canvas.getBoundingClientRect();
+    sporeY = ((e.clientY - rect.top) / rect.height) * H;
+    sporeX = Math.min(W * 0.6, Math.max(W * 0.1, ((e.clientX - rect.left) / rect.width) * W));
+  }
+});
+
+// Buttons
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+
+// Prevent scrolling
+document.body.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+// Initial star field for start screen
+initStars();
+function drawStartBg() {
+  if (gameRunning) return;
+  ctx.fillStyle = '#020208';
+  ctx.fillRect(0, 0, W, H);
+  drawNebula(0.016);
+  drawStars(0.016);
+  requestAnimationFrame(drawStartBg);
+}
+drawStartBg();
+</script>
+</body>
+</html>
